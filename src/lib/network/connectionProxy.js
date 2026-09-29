@@ -111,7 +111,8 @@ export async function resolveConnectionProxyConfig(
 
             strictProxy: proxyPool.strictProxy === true,
 
-            vercelRelayUrl: proxyUrl, // Still mapped to vercelRelayUrl in the unified payload since they use the exact same header spec
+            vercelRelayUrl: proxyUrl, // Unified relay transport shared by Vercel, Cloudflare, and Deno.
+            relaySecret: normalizeString(proxyPool.relaySecret),
           };
         }
 

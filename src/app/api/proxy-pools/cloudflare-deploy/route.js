@@ -1,145 +1,143 @@
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-import { createProxyPool } from "@/models";
+import { createProxyPool, getProxyPools, updateProxyPool } from "@/models";
+import { buildCloudflareRelayWorker, normalizeWorkerName } from "@/lib/cloudflare/relayWorker";
 
-// Relay worker source code deployed to Cloudflare
-const RELAY_WORKER_CODE = `
-export default {
-  async fetch(request, env, ctx) {
-    const target = request.headers.get("x-relay-target");
-    const relayPath = request.headers.get("x-relay-path") || "/";
-    
-    if (!target) {
-      return new Response(JSON.stringify({ error: "Missing x-relay-target header" }), {
-        status: 400,
-        headers: { "content-type": "application/json" },
-      });
-    }
+const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
+const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/i;
 
-    const targetUrl = target.replace(/\\/$/, "") + relayPath;
-    const newRequestInit = {
-      method: request.method,
-      headers: new Headers(request.headers),
-    };
+function authHeaders(apiToken, extra = {}) {
+  return { Authorization: `Bearer ${apiToken}`, ...extra };
+}
 
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      newRequestInit.body = request.body;
-      newRequestInit.duplex = "half";
-    }
+async function cloudflareError(response, fallback) {
+  const payload = await response.json().catch(() => null);
+  return payload?.errors?.map((item) => item.message).filter(Boolean).join("; ") || fallback;
+}
 
-    newRequestInit.headers.delete("x-relay-target");
-    newRequestInit.headers.delete("x-relay-path");
-    newRequestInit.headers.delete("host");
-
+async function testDeployedRelay(deployUrl, relaySecret) {
+  let lastError = "Relay health check failed";
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     try {
-      const response = await fetch(targetUrl, newRequestInit);
-      return new Response(response.body, {
-        status: response.status,
-        headers: response.headers,
+      const response = await fetch(deployUrl, {
+        method: "GET",
+        headers: {
+          "x-relay-auth": relaySecret,
+          "x-relay-target": "https://ip.bwpro.link",
+          "x-relay-path": "/",
+        },
+        signal: AbortSignal.timeout(10000),
       });
+      if (response.ok) return;
+      lastError = `Relay health check returned HTTP ${response.status}`;
     } catch (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 502,
-        headers: { "content-type": "application/json" },
-      });
+      lastError = error?.message || lastError;
     }
-  },
-};
-`;
+  }
+  throw new Error(lastError);
+}
+
+async function saveProxyPool(projectName, deployUrl, relaySecret) {
+  const pools = await getProxyPools();
+  const existing = pools.find((pool) => pool.type === "cloudflare" && pool.name === projectName);
+  const data = {
+    name: projectName,
+    proxyUrl: deployUrl,
+    relaySecret,
+    type: "cloudflare",
+    noProxy: "",
+    isActive: true,
+    strictProxy: true,
+    testStatus: "active",
+    lastTestedAt: new Date().toISOString(),
+    lastError: null,
+  };
+  return existing ? updateProxyPool(existing.id, data) : createProxyPool(data);
+}
 
 // POST /api/proxy-pools/cloudflare-deploy
 export async function POST(request) {
+  let workerScriptUrl = "";
+  let apiToken = "";
+  let workerExisted = false;
+
   try {
     const body = await request.json();
-    const accountId = body.accountId?.trim();
-    const apiToken = body.apiToken?.trim();
-    const projectName = body.projectName?.trim() || `relay-${Date.now().toString(36)}`;
+    const accountId = String(body.accountId || "").trim();
+    apiToken = String(body.apiToken || "").trim();
+    const projectName = normalizeWorkerName(body.projectName || `relay-${Date.now().toString(36)}`);
 
-    if (!accountId || !apiToken) {
-      return NextResponse.json({ error: "Cloudflare Account ID and API Token are required" }, { status: 400 });
+    if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+      return NextResponse.json({ error: "Cloudflare Account ID must be a 32-character hexadecimal ID" }, { status: 400 });
+    }
+    if (!apiToken) {
+      return NextResponse.json({ error: "Cloudflare API Token is required" }, { status: 400 });
     }
 
-    // 1. Upload Worker Script
-    const workerScriptUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${projectName}`;
-    
-    // Cloudflare requires multipart/form-data for worker script upload
+    workerScriptUrl = `${CLOUDFLARE_API}/accounts/${accountId}/workers/scripts/${projectName}`;
+    const existingResponse = await fetch(workerScriptUrl, { headers: authHeaders(apiToken) });
+    workerExisted = existingResponse.ok;
+
+    const relaySecret = randomBytes(32).toString("base64url");
     const formData = new FormData();
-    formData.append("index.js", new Blob([RELAY_WORKER_CODE], { type: "application/javascript+module" }), "index.js");
     formData.append("metadata", new Blob([JSON.stringify({
       main_module: "index.js",
-      compatibility_date: "2024-03-20",
-      observability: { enabled: true }
+      compatibility_date: "2026-03-20",
+      observability: { enabled: true },
     })], { type: "application/json" }), "metadata.json");
+    formData.append("index.js", new Blob([buildCloudflareRelayWorker()], { type: "application/javascript+module" }), "index.js");
 
-    const uploadRes = await fetch(workerScriptUrl, {
+    const uploadResponse = await fetch(workerScriptUrl, {
       method: "PUT",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
+      headers: authHeaders(apiToken),
       body: formData,
     });
-
-    if (!uploadRes.ok) {
-      const err = await uploadRes.json().catch(() => ({}));
-      console.error("Cloudflare upload error:", err);
-      return NextResponse.json(
-        { error: err.errors?.[0]?.message || "Failed to upload Worker to Cloudflare" },
-        { status: uploadRes.status }
-      );
+    if (!uploadResponse.ok) {
+      const message = await cloudflareError(uploadResponse, "Failed to upload Worker to Cloudflare");
+      return NextResponse.json({ error: message }, { status: uploadResponse.status });
     }
 
-    // 2. Enable workers.dev subdomain for the script
-    const enableSubdomainRes = await fetch(`${workerScriptUrl}/subdomain`, {
+    const secretResponse = await fetch(`${workerScriptUrl}/secrets`, {
+      method: "PUT",
+      headers: authHeaders(apiToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ name: "RELAY_SECRET", text: relaySecret, type: "secret_text" }),
+    });
+    if (!secretResponse.ok) {
+      throw new Error(await cloudflareError(secretResponse, "Failed to secure Cloudflare Worker"));
+    }
+
+    const enableResponse = await fetch(`${workerScriptUrl}/subdomain`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ enabled: true }),
+      headers: authHeaders(apiToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ enabled: true, previews_enabled: false }),
     });
-
-    if (!enableSubdomainRes.ok) {
-      const err = await enableSubdomainRes.json().catch(() => ({}));
-      console.error("Cloudflare subdomain enable error:", err);
-      // We don't fail completely here, just continue
+    if (!enableResponse.ok) {
+      throw new Error(await cloudflareError(enableResponse, "Failed to enable workers.dev route"));
     }
 
-    // 3. Get the workers.dev subdomain for the account to construct the final URL
-    let deployUrl = "";
-    const subdomainRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
+    const subdomainResponse = await fetch(`${CLOUDFLARE_API}/accounts/${accountId}/workers/subdomain`, {
+      headers: authHeaders(apiToken),
     });
-
-    if (subdomainRes.ok) {
-      const subdomainData = await subdomainRes.json();
-      if (subdomainData.result && subdomainData.result.subdomain) {
-        deployUrl = `https://${projectName}.${subdomainData.result.subdomain}.workers.dev`;
-      }
+    if (!subdomainResponse.ok) {
+      throw new Error(await cloudflareError(subdomainResponse, "Failed to retrieve workers.dev subdomain"));
     }
+    const subdomainPayload = await subdomainResponse.json();
+    const subdomain = subdomainPayload?.result?.subdomain;
+    if (!subdomain) throw new Error("Cloudflare workers.dev subdomain is not configured for this account");
 
-    if (!deployUrl) {
-       return NextResponse.json(
-        { error: "Worker deployed but failed to retrieve workers.dev subdomain. Make sure you have setup a workers.dev subdomain in Cloudflare Dashboard." },
-        { status: 400 }
-      );
-    }
+    const deployUrl = `https://${projectName}.${subdomain}.workers.dev`;
+    await testDeployedRelay(deployUrl, relaySecret);
+    const proxyPool = await saveProxyPool(projectName, deployUrl, relaySecret);
+    const publicProxyPool = { ...proxyPool };
+    delete publicProxyPool.relaySecret;
 
-    // Create proxy pool entry with type cloudflare
-    const proxyPool = await createProxyPool({
-      name: projectName,
-      proxyUrl: deployUrl,
-      type: "cloudflare",
-      noProxy: "",
-      isActive: true,
-      strictProxy: false,
-    });
-
-    return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
+    return NextResponse.json({ proxyPool: publicProxyPool, deployUrl, secured: true }, { status: 201 });
   } catch (error) {
-    console.log("Error deploying Cloudflare relay:", error);
-    return NextResponse.json({ error: error.message || "Deploy failed" }, { status: 500 });
+    if (workerScriptUrl && apiToken && !workerExisted) {
+      await fetch(workerScriptUrl, { method: "DELETE", headers: authHeaders(apiToken) }).catch(() => null);
+    }
+    console.error("Cloudflare relay deployment failed:", error?.message || error);
+    return NextResponse.json({ error: error?.message || "Deploy failed" }, { status: 500 });
   }
 }

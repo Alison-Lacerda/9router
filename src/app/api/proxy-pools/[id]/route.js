@@ -45,6 +45,12 @@ function normalizeProxyPoolUpdate(body = {}) {
   return { updates };
 }
 
+function toPublicProxyPool(pool) {
+  const publicPool = { ...pool };
+  delete publicPool.relaySecret;
+  return publicPool;
+}
+
 function countBoundConnections(connections = [], proxyPoolId) {
   return connections.filter((connection) => connection?.providerSpecificData?.proxyPoolId === proxyPoolId).length;
 }
@@ -59,7 +65,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ proxyPool });
+    return NextResponse.json({ proxyPool: toPublicProxyPool(proxyPool) });
   } catch (error) {
     console.log("Error fetching proxy pool:", error);
     return NextResponse.json({ error: "Failed to fetch proxy pool" }, { status: 500 });
@@ -84,7 +90,7 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateProxyPool(id, normalized.updates);
-    return NextResponse.json({ proxyPool: updated });
+    return NextResponse.json({ proxyPool: toPublicProxyPool(updated) });
   } catch (error) {
     console.log("Error updating proxy pool:", error);
     return NextResponse.json({ error: "Failed to update proxy pool" }, { status: 500 });

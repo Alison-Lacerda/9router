@@ -28,6 +28,12 @@ function normalizeProxyPoolInput(body = {}) {
   return { name, proxyUrl, noProxy, isActive, strictProxy, type };
 }
 
+function toPublicProxyPool(pool) {
+  const publicPool = { ...pool };
+  delete publicPool.relaySecret;
+  return publicPool;
+}
+
 function buildUsageMap(connections = []) {
   const usageMap = new Map();
 
@@ -56,14 +62,14 @@ export async function GET(request) {
     const proxyPools = await getProxyPools(filter);
 
     if (!includeUsage) {
-      return NextResponse.json({ proxyPools });
+      return NextResponse.json({ proxyPools: proxyPools.map(toPublicProxyPool) });
     }
 
     const connections = await getProviderConnections();
     const usageMap = buildUsageMap(connections);
 
     const enrichedProxyPools = proxyPools.map((pool) => ({
-      ...pool,
+      ...toPublicProxyPool(pool),
       boundConnectionCount: usageMap.get(pool.id) || 0,
     }));
 

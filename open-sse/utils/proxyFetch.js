@@ -1,6 +1,7 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { buildRelayHeaders } from "./relayProxy.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
@@ -297,15 +298,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
-    const parsed = new URL(targetUrl);
-    const baseHeaders = options.headers instanceof Headers
-      ? Object.fromEntries(options.headers.entries())
-      : { ...(options.headers || {}) };
-    const relayHeaders = {
-      ...baseHeaders,
-      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
-      "x-relay-path": `${parsed.pathname}${parsed.search}`,
-    };
+    const relayHeaders = buildRelayHeaders(
+      options.headers,
+      targetUrl,
+      normalizeString(proxyOptions?.relaySecret)
+    );
     return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 

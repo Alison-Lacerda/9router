@@ -3,17 +3,20 @@ import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { fetch as undiciFetch } from "undici";
 
-async function testVercelRelay(relayUrl, timeoutMs = 10000) {
+async function testRelay(relayUrl, relaySecret = "", timeoutMs = 10000) {
   const controller = new AbortController();
   const startedAt = Date.now();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const headers = {
+      "x-relay-target": "https://ip.bwpro.link",
+      "x-relay-path": "/",
+    };
+    if (relaySecret) headers["x-relay-auth"] = relaySecret;
+
     const res = await undiciFetch(relayUrl, {
       method: "GET",
-      headers: {
-        "x-relay-target": "https://httpbin.org",
-        "x-relay-path": "/get",
-      },
+      headers,
       signal: controller.signal,
     });
     return {
@@ -44,7 +47,7 @@ export async function POST(request, { params }) {
     }
 
     const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno"
-      ? await testVercelRelay(proxyPool.proxyUrl)
+      ? await testRelay(proxyPool.proxyUrl, proxyPool.relaySecret)
       : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();
 

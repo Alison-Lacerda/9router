@@ -67,6 +67,7 @@ export async function createProxyPool(data) {
     type: data.type || "http",
     isActive: data.isActive !== undefined ? data.isActive : true,
     strictProxy: data.strictProxy === true,
+    relaySecret: typeof data.relaySecret === "string" ? data.relaySecret : "",
     testStatus: data.testStatus || "unknown",
     lastTestedAt: data.lastTestedAt || null,
     lastError: data.lastError || null,

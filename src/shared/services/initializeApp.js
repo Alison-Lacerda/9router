@@ -1,7 +1,7 @@
 import os from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import {
   enableTunnel, enableTailscale,
@@ -16,6 +16,44 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { createProxyPool, getProxyPools, updateProxyPool } from "@/models";
+
+async function bootstrapRelayProxyPool() {
+  let proxyUrl = process.env.RELAY_BOOTSTRAP_URL?.trim();
+  let relaySecret = process.env.RELAY_BOOTSTRAP_SECRET?.trim();
+  const bootstrapFile = "/run/secrets/cloudflare-relay-bootstrap.json";
+
+  if ((!proxyUrl || !relaySecret) && existsSync(bootstrapFile)) {
+    try {
+      const config = JSON.parse(readFileSync(bootstrapFile, "utf8"));
+      proxyUrl = config.proxyUrl?.trim();
+      relaySecret = config.relaySecret?.trim();
+    } catch (error) {
+      console.error("[InitApp] Invalid Cloudflare Relay bootstrap file:", error.message);
+      return;
+    }
+  }
+
+  if (!proxyUrl || !relaySecret) return;
+
+  const pools = await getProxyPools();
+  const existing = pools.find((pool) => pool.type === "cloudflare" && pool.proxyUrl === proxyUrl);
+  const values = {
+    name: "Cloudflare Relay",
+    proxyUrl,
+    relaySecret,
+    type: "cloudflare",
+    isActive: true,
+    strictProxy: true,
+    testStatus: "success",
+    lastTestedAt: new Date().toISOString(),
+    lastError: null,
+  };
+
+  if (existing) await updateProxyPool(existing.id, values);
+  else await createProxyPool(values);
+  console.log("[InitApp] Cloudflare Relay proxy pool bootstrapped");
+}
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -80,6 +118,7 @@ export async function initializeApp() {
 }
 
 async function runHeavyStartup() {
+  await bootstrapRelayProxyPool();
   await cleanupProviderConnections();
   const settings = await getSettings();
 

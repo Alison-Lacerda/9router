@@ -48,9 +48,8 @@ function jsonResponse(status, error) {
   });
 }
 
-export default {
-  async fetch(request, env) {
-    if (!env.RELAY_SECRET || !timingSafeEqual(request.headers.get("x-relay-auth"), env.RELAY_SECRET)) {
+async function handleRequest(request) {
+    if (typeof RELAY_SECRET !== "string" || !RELAY_SECRET || !timingSafeEqual(request.headers.get("x-relay-auth"), RELAY_SECRET)) {
       return jsonResponse(401, "Unauthorized relay request");
     }
 
@@ -95,7 +94,10 @@ export default {
     } catch (error) {
       return jsonResponse(502, error?.message || "Relay upstream request failed");
     }
-  },
-};
+}
+
+addEventListener("fetch", (event) => {
+  event.respondWith(handleRequest(event.request));
+});
 `;
 }

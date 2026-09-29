@@ -35,7 +35,9 @@ test("buildRelayHeaders omits relay authentication for legacy relay pools", () =
 
 test("Cloudflare worker requires secret and rejects unsafe targets", () => {
   const source = buildCloudflareRelayWorker();
-  assert.match(source, /env\.RELAY_SECRET/);
+  assert.match(source, /typeof RELAY_SECRET !== "string"/);
+  assert.match(source, /addEventListener\("fetch"/);
+  assert.doesNotMatch(source, /export default/);
   assert.match(source, /x-relay-auth/);
   assert.match(source, /timingSafeEqual/);
   assert.match(source, /protocol !== "https:"/);

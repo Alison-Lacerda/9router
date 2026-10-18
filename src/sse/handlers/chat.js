@@ -17,6 +17,7 @@ import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { applyLoopGuard } from "open-sse/services/loopGuard.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -110,6 +111,7 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
     const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings), comboModels);
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+    const guardModels = applyLoopGuard({ body, settings, models: augmentedModels, comboName: modelStr, log });
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -132,10 +134,10 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("CHAT", `Combo "${modelStr}" with ${guardModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: augmentedModels,
+      models: guardModels,
       handleSingleModel: withCapacityAdapterStripping(
         (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         adapterAdded
@@ -190,6 +192,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const keyAccess = await getKeyAccessContext(request);
       const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings), comboModels);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+      const guardModels = applyLoopGuard({ body, settings: chatSettings, models: augmentedModels, comboName: modelStr, log });
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -212,10 +215,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      log.info("CHAT", `Combo "${modelStr}" with ${guardModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
-        models: augmentedModels,
+        models: guardModels,
         handleSingleModel: withCapacityAdapterStripping(
           (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
           adapterAdded

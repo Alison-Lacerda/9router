@@ -31,7 +31,7 @@ export default {
     { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },
     { id: "whisper-large-v3", name: "Whisper Large v3", params: ["language","response_format","temperature","prompt"], kind: "stt" },
     { id: "whisper-large-v3-turbo", name: "Whisper Large v3 Turbo", params: ["language","response_format","temperature","prompt"], kind: "stt" },
-    { id: "distil-whisper-large-v3-en", name: "Distil Whisper Large v3 EN", params: ["language","response_format","temperature","prompt"], kind: "stt" },
+    { id: "qwen/qwen3.8-27b", name: "Qwen3.8 27B", params: ["language","response_format","temperature","prompt"], kind: "stt" },
   ],
   serviceKinds: ["llm","imageToText","stt"],
   sttConfig: {

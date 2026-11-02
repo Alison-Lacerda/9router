@@ -133,7 +133,6 @@ export default {
     { id: "gemini-3.0-flash-medium", name: "Gemini 3 Flash Medium" },
     { id: "gemini-3.0-flash-low", name: "Gemini 3 Flash Low" },
     { id: "gemini-3.0-flash-minimal", name: "Gemini 3 Flash Minimal" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     // Others
     { id: "deepseek-v4", name: "DeepSeek V4" },
     { id: "kimi-k2.6", name: "Kimi K2.6" },

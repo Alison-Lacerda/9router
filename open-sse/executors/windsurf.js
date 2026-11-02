@@ -110,7 +110,6 @@ const MODEL_ALIAS_MAP = {
   "gemini-3.0-flash-low": "MODEL_GOOGLE_GEMINI_3_0_FLASH_LOW",
   "gemini-3.0-flash-minimal": "MODEL_GOOGLE_GEMINI_3_0_FLASH_MINIMAL",
   "gemini-3.0-flash": "MODEL_GOOGLE_GEMINI_3_0_FLASH_HIGH",
-  "gemini-2.5-pro": "MODEL_GOOGLE_GEMINI_2_5_PRO",
   // ── Others ──────────────────────────────────────────────────────────────
   "deepseek-v4": "deepseek-v4",
   "kimi-k2.6": "kimi-k2-6",

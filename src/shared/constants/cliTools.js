@@ -288,17 +288,17 @@ export const CLI_TOOLS = {
     docsUrl: "/docs?section=cli-tools&tool=amp",
     configType: "guide",
     defaultCommand: "amp",
-    modelAliases: ["g25p", "g25f", "cs45", "g54"],
+    modelAliases: ["g31p", "g38f", "cs45", "g54"],
     notes: [
       { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
-      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
+      { type: "warning", text: "Suggested shorthand examples: g31p → gemini/gemini-3.1-pro-preview, g38f → gemini/gemini-3.8-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
     ],
     guideSteps: [
       { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
       { step: 2, title: "API Key", type: "apiKeySelector" },
       { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
       { step: 4, title: "Select Model", type: "modelSelector" },
-      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
+      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g31p or cs45 to 9Router aliases in your local config." },
     ],
     codeBlock: {
       language: "bash",
@@ -306,7 +306,7 @@ export const CLI_TOOLS = {
 export OPENAI_BASE_URL="{{baseUrl}}"
 amp --model "{{model}}"
 # Example shorthand aliases you can map locally:
-# g25p -> gemini/gemini-2.5-pro
+# g31p -> gemini/gemini-3.1-pro-preview
 # cs45 -> cc/claude-sonnet-4-5-20250929`,
     },
   },
@@ -600,8 +600,8 @@ gemini extensions install https://github.com/manalkaff/opendesign
   //     model: "GEMINI_MODEL",
   //   },
   //   defaultModels: [
-  //     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", alias: "pro" },
-  //     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", alias: "flash" },
+  //     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", alias: "pro" },
+  //     { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", alias: "flash" },
   //   ],
   // },
 };

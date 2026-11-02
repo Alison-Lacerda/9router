@@ -55,7 +55,6 @@ export default {
     { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", contextLength: 1000000 },
     { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", contextLength: 1000000 },
     { id: "gemini-3.0-flash-high", name: "Gemini 3 Flash High", contextLength: 1000000 },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", contextLength: 1000000 },
     { id: "deepseek-v4", name: "DeepSeek V4", contextLength: 1048576 },
     { id: "kimi-k2.6", name: "Kimi K2.6", contextLength: 262144 },
     { id: "glm-5.1", name: "GLM-5.1", contextLength: 204800 },

@@ -41,7 +41,7 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
 }
 
 // id format: "{alias}/{modelId}" - alias may also be providerId
-// requestedKind: optional, disambiguates duplicate ids across kinds (e.g. gemini-2.5-pro llm vs stt)
+// requestedKind: optional, disambiguates duplicate ids across kinds (e.g. gemini-3.1-pro-preview llm vs stt)
 function lookup(fullId, requestedKind) {
   if (!fullId || !fullId.includes("/")) return null;
   const slash = fullId.indexOf("/");

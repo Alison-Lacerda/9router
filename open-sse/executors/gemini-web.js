@@ -37,7 +37,7 @@ import { buildImagePrompt, waitForGeminiImage } from "./gemini-web/imageGen.js";
 
 const GEMINI_URL = "https://gemini.google.com/app";
 /** Response-label fallback when no `model` was requested at all. */
-const DEFAULT_MODEL_ID = "gemini-2.5-pro";
+const DEFAULT_MODEL_ID = "gemini-3.1-pro";
 
 export { isMissingBrowserExecutable } from "./browserExecutableCheck.js";
 

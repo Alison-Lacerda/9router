@@ -33,6 +33,6 @@ export default {
     { id: "glm-4.7", name: "GLM 4.7", contextLength: 204800 },
     { id: "minimax-m2.5", name: "MiniMax M2.5", contextLength: 204800 },
     { id: "claude-opus-4-5", name: "Claude Opus 4.5 (VIP)", contextLength: 200000 },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (VIP)", contextLength: 1048576 },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview (VIP)", contextLength: 1048576 },
   ],
 };

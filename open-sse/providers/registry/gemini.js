@@ -52,7 +52,6 @@ export default {
     { id: "gemini-3.1-flash-lite-image", name: "Gemini 3.1 Flash Lite Image", params: [], kind: "image" },
     { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash Image (Nano Banana 2)", params: [], kind: "image" },
     { id: "gemini-3-pro-image", name: "Gemini 3 Pro Image (Nano Banana Pro)", params: [], kind: "image" },
-    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", params: [], kind: "image" },
     { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite", params: ["language","prompt"], kind: "stt" },
     { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", params: ["language","prompt"], kind: "stt" },
     { id: "gemini-3.1-flash-tts-preview", name: "Gemini 3.1 Flash TTS", kind: "tts" },

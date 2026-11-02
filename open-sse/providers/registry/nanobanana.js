@@ -14,7 +14,7 @@ export default {
     textIcon: "🍌",
     website: "https://nanobananaapi.ai",
     notice: {
-      text: "3rd-party proxy for Google Nano Banana (Gemini 2.5/3 Flash Image). For official, use Gemini provider.",
+      text: "3rd-party proxy for Google Nano Banana (Gemini 3 Flash Image). For official, use Gemini provider.",
       apiKeyUrl: "https://nanobananaapi.ai/dashboard",
     },
   },

@@ -227,6 +227,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stripContinuityFields(translatedBody);
   }
 
+  // Pin the streaming flag on the outgoing body. `stream` defaults to true
+  // whenever the client did not send `stream: false`, but the same-format
+  // passthrough (openai→openai) forwards the client body unchanged — a client
+  // that omits `stream` leaves the provider defaulting to a non-streaming JSON
+  // response, which the SSE transform then reads as empty (combo falls through
+  // with "no-content"). Only the OpenAI chat path takes a `stream` body field;
+  // other formats convey streaming via endpoint/translator.
+  if (targetFormat === FORMATS.OPENAI && translatedBody && typeof translatedBody.stream !== "boolean") {
+    translatedBody.stream = stream;
+  }
+
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
   // dedup for DeepSeek models (upstream rejects duplicate tool names on all endpoints).
   if (Array.isArray(translatedBody.tools)) {

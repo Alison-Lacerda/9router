@@ -207,7 +207,11 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // VS Code Copilot opens its system prompt with this line; Antigravity answers a fake 429
   // RESOURCE_EXHAUSTED for it (bisected from a real Copilot system prompt, 2026-11-28).
   // It is the only trigger in the whole 407-line prompt.
-  { from: "Follow Microsoft content policies.", to: "Follow content policies." }
+  { from: "Follow Microsoft content policies.", to: "Follow content policies." },
+  // Cline opens its system prompt with this line; Antigravity answers a fake 429
+  // RESOURCE_EXHAUSTED for it (bisected from a real Cline system prompt, 2026-11-28).
+  // It is the only trigger in the whole 58-line prompt.
+  { from: "You are Cline, an AI coding agent. Your primary goal is to assist users with various coding tasks by leveraging your knowledge and the tools at your disposal. Given the user's prompt, you should use the tools available to you to answer user's question.", to: "You are an AI coding agent. Your primary goal is to assist users with various coding tasks by leveraging your knowledge and the tools at your disposal. Given the user's prompt, you should use the tools available to you to answer user's question." }
 ];
 
 // Official Antigravity 2.33.0 identity, sent ahead of every generation request.

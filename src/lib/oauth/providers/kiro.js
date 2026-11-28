@@ -1,5 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
-import { extractEmailFromAccessToken } from "../providerHelpers.js";
+import { extractEmailFromAccessToken, wrapOAuthFetchError } from "../providerHelpers.js";
 
 const kiro = {
   config: KIRO_CONFIG,
@@ -16,20 +16,25 @@ const kiro = {
     const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
 
     // Step 1: Register client with AWS SSO OIDC
-    const registerRes = await fetch(registerClientUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        clientName: config.clientName,
-        clientType: config.clientType,
-        scopes: config.scopes,
-        grantTypes: config.grantTypes,
-        issuerUrl: config.issuerUrl,
-      }),
-    });
+    let registerRes;
+    try {
+      registerRes = await fetch(registerClientUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          clientName: config.clientName,
+          clientType: config.clientType,
+          scopes: config.scopes,
+          grantTypes: config.grantTypes,
+          issuerUrl: config.issuerUrl,
+        }),
+      });
+    } catch (err) {
+      throw wrapOAuthFetchError("Client registration request failed", registerClientUrl, err);
+    }
 
     if (!registerRes.ok) {
       const error = await registerRes.text();
@@ -39,18 +44,23 @@ const kiro = {
     const clientInfo = await registerRes.json();
 
     // Step 2: Request device authorization
-    const deviceRes = await fetch(deviceAuthUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        clientId: clientInfo.clientId,
-        clientSecret: clientInfo.clientSecret,
-        startUrl,
-      }),
-    });
+    let deviceRes;
+    try {
+      deviceRes = await fetch(deviceAuthUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          clientId: clientInfo.clientId,
+          clientSecret: clientInfo.clientSecret,
+          startUrl,
+        }),
+      });
+    } catch (err) {
+      throw wrapOAuthFetchError("Device authorization request failed", deviceAuthUrl, err);
+    }
 
     if (!deviceRes.ok) {
       const error = await deviceRes.text();
@@ -79,19 +89,24 @@ const kiro = {
     const region = extraData?._region || "us-east-1";
     assertValidAwsRegion(region);
     const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
-    const response = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        clientId: extraData?._clientId,
-        clientSecret: extraData?._clientSecret,
-        deviceCode: deviceCode,
-        grantType: "urn:ietf:params:oauth:grant-type:device_code",
-      }),
-    });
+    let response;
+    try {
+      response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          clientId: extraData?._clientId,
+          clientSecret: extraData?._clientSecret,
+          deviceCode: deviceCode,
+          grantType: "urn:ietf:params:oauth:grant-type:device_code",
+        }),
+      });
+    } catch (err) {
+      throw wrapOAuthFetchError("Token poll request failed", tokenUrl, err);
+    }
 
     let data;
     try {

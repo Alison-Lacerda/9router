@@ -247,4 +247,56 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     const streamBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input, true, { apiKey: "nvapi-x" });
     expect(streamBody.stream_options).toEqual({ include_usage: true });
   });
+
+  it("retries with fallback ECDH curves on TLS handshake failure and remembers the host", async () => {
+    delete process.env.NINEROUTER_TLS_ECDH_CURVE;
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(new Error("sslv3 alert handshake failure"), {
+          code: "ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE",
+        }),
+      }))
+      .mockResolvedValueOnce({ status: 200, ok: true })
+      .mockResolvedValueOnce({ status: 200, ok: true });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
+
+    const {
+      proxyAwareFetch,
+      getDirectDispatcher,
+      isStaleSocketError,
+      isTlsHandshakeError,
+      resetDirectDispatchersForTests,
+    } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    const handshakeErr = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("SSL_HANDSHAKE_FAILURE"), { code: "ERR_SSL_SSL_HANDSHAKE_FAILURE" }),
+    });
+    expect(isTlsHandshakeError(handshakeErr)).toBe(true);
+    expect(isStaleSocketError(handshakeErr)).toBe(false);
+
+    const res1 = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/client/register", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(res1.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const primaryDispatcher = await getDirectDispatcher(false);
+    const fallbackDispatcher = await getDirectDispatcher(false, "X25519:prime256v1:secp384r1");
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBe(primaryDispatcher);
+    expect(fetchMock.mock.calls[1][1].dispatcher).toBe(fallbackDispatcher);
+    expect(fallbackDispatcher).not.toBe(primaryDispatcher);
+
+    const res2 = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/device_authorization", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(res2.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][1].dispatcher).toBe(fallbackDispatcher);
+  });
 });

@@ -167,6 +167,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
         const data = await res.json();
 
+        if (!res.ok) {
+          throw new Error(data.errorDescription || data.error || `Poll failed (${res.status})`);
+        }
+
         if (data.success) {
           pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
@@ -981,7 +985,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <span className="material-symbols-outlined text-3xl text-red-600">error</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connection Failed</h3>
-            <p className="text-sm text-red-600 mb-4">{error}</p>
+            <p className="text-sm text-red-600 mb-4 break-words">{error}</p>
             <div className="flex gap-2">
               <Button onClick={startOAuthFlow} variant="secondary" fullWidth>
                 Try Again

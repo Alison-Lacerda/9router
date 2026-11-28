@@ -84,6 +84,60 @@ export function extractCodexAccountInfo(idToken) {
   };
 }
 
+function sanitizeOAuthErrorText(text) {
+  return String(text || "")
+    .replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/@\s]+)@/g, "$1")
+    .replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/g, "$1")
+    .trim();
+}
+
+function describeOAuthErrorNode(node) {
+  if (!node || typeof node !== "object") return sanitizeOAuthErrorText(node);
+  if (Array.isArray(node.errors) && node.errors.length > 0) {
+    const items = [];
+    for (const sub of node.errors.slice(0, 3)) {
+      const desc = describeOAuthErrorNode(sub);
+      if (desc && !items.includes(desc)) items.push(desc);
+    }
+    if (items.length > 0) return items.join("; ");
+  }
+  const code = typeof node.code === "string" ? node.code.trim() : "";
+  const msg = sanitizeOAuthErrorText(node.message || node.reason || "");
+  if (code && msg && !msg.includes(code)) return `${code}: ${msg}`;
+  return msg || code;
+}
+
+export function formatOAuthError(error) {
+  const baseMsg = sanitizeOAuthErrorText(error?.message || String(error || "Unknown OAuth error"));
+  const parts = [];
+  const seen = new Set();
+  if (error && typeof error === "object") seen.add(error);
+
+  let current = error?.cause;
+  for (let depth = 0; current && depth < 4; depth++) {
+    if (typeof current === "object") {
+      if (seen.has(current)) break;
+      seen.add(current);
+    }
+    const desc = describeOAuthErrorNode(current);
+    if (desc && !baseMsg.includes(desc) && !parts.includes(desc)) {
+      parts.push(desc);
+    }
+    current = typeof current === "object" ? current.cause : null;
+  }
+
+  return parts.length > 0 ? `${baseMsg} (cause: ${parts.join(" -> ")})` : baseMsg;
+}
+
+export function wrapOAuthFetchError(step, targetUrl, error) {
+  let host = "unknown-host";
+  try {
+    host = new URL(String(targetUrl)).host || host;
+  } catch {}
+  const msg = sanitizeOAuthErrorText(error?.message || "fetch failed");
+  return new Error(`${step} (${host}): ${msg}`, { cause: error });
+}
+
 export {
   BASE64_BLOCK_SIZE,
   validateXaiOAuthEndpoint,

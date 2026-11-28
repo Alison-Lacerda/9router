@@ -236,6 +236,24 @@ describe("retry with the system prompt in the first user turn", () => {
     expect(sentBody(2).request.contents).toEqual([{ role: "user", parts: [{ text: "Follow the house rules." }, { text: "hi" }] }]);
   });
 
+  it("strips standalone Hermes Be direct SOUL paragraph while keeping custom Be direct instructions", async () => {
+    fetchMock.mockResolvedValueOnce(ok());
+    const splitSoul = [
+      "You are Hermes Agent, built by Nous Research.",
+      "Be direct: match the length of your reply to the weight of the ask — a one-line question gets a one-line answer.",
+      "Be direct: answer in Portuguese.",
+    ].join("\n");
+
+    const { response: upstream } = await run({}, splitSoul);
+    expect(upstream.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const systemTexts = sentBody(0).request.systemInstruction.parts.map((p) => p.text).join("\n");
+    expect(systemTexts).toContain("You are an AI assistant.");
+    expect(systemTexts).not.toContain("match the length of your reply to the weight of the ask");
+    expect(systemTexts).toContain("Be direct: answer in Portuguese.");
+  });
+
   it("does not cache a prompt when the moved retry is also refused", async () => {
     fetchMock.mockImplementation(async () => response(429, BARE));
     await run();

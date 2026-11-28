@@ -190,6 +190,7 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   // bisecting a real Hermes system prompt, 2026-11-18). Whole lines go; the default SOUL line
   // keeps a neutral identity. Must run before the generic Hermes identity rule below.
   { from: /^[ \t]*You are Hermes Agent, built by Nous Research\. Be direct:[^\n]*/gm, to: "You are an AI assistant." },
+  { from: /^[ \t]*Be direct: match the length of your reply to the weight of the ask[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /^[ \t]*<!-- End Hermes runtime environment -->[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /^[ \t]*# Google model operational directives[^\n]*(?:\r?\n)?/gm, to: "" },
   { from: /^[ \t]*If a tool, install, or network call fails and blocks the real path[^\n]*(?:\r?\n)?/gm, to: "" },

@@ -156,7 +156,7 @@ function isTlsCertError(err) {
 }
 
 const TLS_HANDSHAKE_CODE_RE = /^ERR_SSL_.*(HANDSHAKE|ALERT|NO_CIPHER|UNSUPPORTED|CURVE|KEY_SHARE|SIGNATURE)/i;
-const TLS_HANDSHAKE_MSG_RE = /handshake failure|ssl_handshake_failure|wrong curve|no suitable signature|no shared cipher/i;
+const TLS_HANDSHAKE_MSG_RE = /handshake failure|ssl_handshake_failure|wrong curve|no suitable signature|no shared cipher|before secure tls connection was established/i;
 
 export function isTlsHandshakeError(err) {
   const queue = [err];
@@ -449,9 +449,11 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       && isBodyReplaySafe(options.body)
       && isTlsHandshakeError(err)
     ) {
-      recordCurveFallbackHost(host);
       dbg("TLS", `handshake failed with curve ${activeCurve} (${err.cause?.code || err.code || err.message}), retrying with ${FALLBACK_TLS_ECDH_CURVE}: ${host}`);
-      return await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket, FALLBACK_TLS_ECDH_CURVE);
+      const fallbackRes = await fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket, FALLBACK_TLS_ECDH_CURVE);
+      // Cache only after the fallback curve succeeds so unrelated network resets don't pin the host.
+      recordCurveFallbackHost(host);
+      return fallbackRes;
     }
 
     // Stale keep-alive recovery: a pooled socket died before returning headers. Replay

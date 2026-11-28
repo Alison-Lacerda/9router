@@ -278,6 +278,15 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(isTlsHandshakeError(handshakeErr)).toBe(true);
     expect(isStaleSocketError(handshakeErr)).toBe(false);
 
+    const preEstablishResetErr = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(
+        new Error("Client network socket disconnected before secure TLS connection was established"),
+        { code: "ECONNRESET" }
+      ),
+    });
+    expect(isTlsHandshakeError(preEstablishResetErr)).toBe(true);
+    expect(isStaleSocketError(preEstablishResetErr)).toBe(false);
+
     const res1 = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/client/register", {
       method: "POST",
       body: "{}",
@@ -298,5 +307,40 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(res2.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2][1].dispatcher).toBe(fallbackDispatcher);
+  });
+
+  it("retries with fallback ECDH curves on pre-establish TLS ECONNRESET", async () => {
+    delete process.env.NINEROUTER_TLS_ECDH_CURVE;
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), {
+        cause: Object.assign(
+          new Error("Client network socket disconnected before secure TLS connection was established"),
+          { code: "ECONNRESET" }
+        ),
+      }))
+      .mockResolvedValueOnce({ status: 200, ok: true });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, fetch: fetchMock };
+    });
+
+    const {
+      proxyAwareFetch,
+      getDirectDispatcher,
+      resetDirectDispatchersForTests,
+    } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    const res = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/client/register", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const primaryDispatcher = await getDirectDispatcher(false);
+    const fallbackDispatcher = await getDirectDispatcher(false, "X25519:prime256v1:secp384r1");
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBe(primaryDispatcher);
+    expect(fetchMock.mock.calls[1][1].dispatcher).toBe(fallbackDispatcher);
   });
 });

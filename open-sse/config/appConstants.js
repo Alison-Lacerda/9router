@@ -203,7 +203,11 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
   { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") },
   // OpenClaw system-prompt header triggers a fake 429 RESOURCE_EXHAUSTED upstream
-  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant running inside Antigravity." }
+  { from: /You are a personal assistant running inside OpenClaw\./gi, to: "You are a personal assistant running inside Antigravity." },
+  // VS Code Copilot opens its system prompt with this line; Antigravity answers a fake 429
+  // RESOURCE_EXHAUSTED for it (bisected from a real Copilot system prompt, 2026-11-28).
+  // It is the only trigger in the whole 407-line prompt.
+  { from: "Follow Microsoft content policies.", to: "Follow content policies." }
 ];
 
 // Official Antigravity 2.33.0 identity, sent ahead of every generation request.

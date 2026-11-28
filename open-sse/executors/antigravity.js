@@ -74,12 +74,35 @@ function readBodyOnce(response) {
   return response._bodyTextOnce;
 }
 
+const REJECTED_PROMPT_CACHE_MAX = 500;
+const REJECTED_PROMPT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function applyAntigravityPromptRewrites(text) {
+  let rewritten = text;
+  for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
+    rewritten = rewritten.replaceAll(from, to);
+  }
+  return rewritten;
+}
+
+function getRejectedPromptKey(body) {
+  const parts = (body?.request?.systemInstruction?.parts || [])
+    .filter(p => typeof p?.text === "string" && p.text.trim())
+    .map(p => applyAntigravityPromptRewrites(p.text).trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  return crypto.createHash("sha256").update(parts.join("\0")).digest("hex");
+}
+
 // Antigravity fingerprints systemInstruction only: the same text sent in a user turn passes (probed
 // live). Returns a copy of the envelope with the system parts moved to the front of the first user
 // turn (normalizeGeminiContents merges the two), or null when there is no system text to move.
 export function moveSystemInstructionToContents(body) {
   const { systemInstruction, ...request } = body?.request || {};
-  const parts = (systemInstruction?.parts || []).filter(p => typeof p?.text === "string" && p.text.trim());
+  const parts = (systemInstruction?.parts || [])
+    .filter(p => typeof p?.text === "string" && p.text.trim())
+    .map(p => ({ ...p, text: applyAntigravityPromptRewrites(p.text) }))
+    .filter(p => p.text.trim());
   if (parts.length === 0) return null;
   return { ...body, request: { ...request, contents: [{ role: GEMINI_ROLE.USER, parts }, ...(request.contents || [])] } };
 }
@@ -165,20 +188,71 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+    this._rejectedPromptCache = new Map();
+  }
+
+  clearRejectedPromptCache() {
+    this._rejectedPromptCache.clear();
+  }
+
+  _hasRejectedPrompt(key) {
+    if (!key) return false;
+    const expiresAt = this._rejectedPromptCache.get(key);
+    if (!expiresAt) return false;
+    if (Date.now() > expiresAt) {
+      this._rejectedPromptCache.delete(key);
+      return false;
+    }
+    this._rejectedPromptCache.delete(key);
+    this._rejectedPromptCache.set(key, expiresAt);
+    return true;
+  }
+
+  _rememberRejectedPrompt(key) {
+    if (!key) return;
+    if (this._rejectedPromptCache.has(key)) {
+      this._rejectedPromptCache.delete(key);
+    } else if (this._rejectedPromptCache.size >= REJECTED_PROMPT_CACHE_MAX) {
+      const oldestKey = this._rejectedPromptCache.keys().next().value;
+      this._rejectedPromptCache.delete(oldestKey);
+    }
+    this._rejectedPromptCache.set(key, Date.now() + REJECTED_PROMPT_CACHE_TTL_MS);
   }
 
   async execute(args) {
+    const canMoveSystemPrompt = !isImageModel(args.model);
+    const promptKey = canMoveSystemPrompt ? getRejectedPromptKey(args.body) : null;
+    let movedFromCache = false;
+
+    if (promptKey && this._hasRejectedPrompt(promptKey)) {
+      const moved = moveSystemInstructionToContents(args.body);
+      if (moved) {
+        args.log?.debug?.("ANTIGRAVITY", "Moving previously rejected system prompt to first user turn");
+        args = { ...args, body: moved };
+        movedFromCache = true;
+      }
+    }
+
     let result = await super.execute(args);
     // A prompt rejection means systemInstruction carries text Google fingerprints that
     // ANTIGRAVITY_PROMPT_REWRITES does not cover yet. Retry once with that text moved into the first
-    // user turn, so a new fingerprint costs one extra round trip instead of failing every request.
+    // user turn, and remember that prompt so subsequent turns avoid the rejected round trip.
     // Image requests never send systemInstruction, so there is nothing to move for them.
-    if (result?.response?.status === HTTP_STATUS.RATE_LIMITED && !isImageModel(args.model)) {
-      const moved = moveSystemInstructionToContents(args.body);
-      if (moved && isAntigravityPromptRejection(result.response.status, await readBodyOnce(result.response))) {
-        args.log?.warn?.("ANTIGRAVITY", "System prompt rejected (fingerprinted third-party text not in ANTIGRAVITY_PROMPT_REWRITES); retrying with it in the first user turn");
-        args = { ...args, body: moved };
-        result = await super.execute(args);
+    if (result?.response?.status === HTTP_STATUS.RATE_LIMITED && canMoveSystemPrompt) {
+      if (movedFromCache) {
+        if (isAntigravityPromptRejection(result.response.status, await readBodyOnce(result.response))) {
+          this._rejectedPromptCache.delete(promptKey);
+        }
+      } else {
+        const moved = moveSystemInstructionToContents(args.body);
+        if (moved && isAntigravityPromptRejection(result.response.status, await readBodyOnce(result.response))) {
+          args.log?.warn?.("ANTIGRAVITY", "System prompt rejected (fingerprinted third-party text not in ANTIGRAVITY_PROMPT_REWRITES); retrying with it in the first user turn");
+          args = { ...args, body: moved };
+          result = await super.execute(args);
+          if (result?.response?.ok && promptKey) {
+            this._rememberRejectedPrompt(promptKey);
+          }
+        }
       }
     }
     if (!result?.response?.ok) return result;
@@ -387,12 +461,14 @@ export class AntigravityExecutor extends BaseExecutor {
     // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
     // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
     if (requestWithoutTools.systemInstruction?.parts) {
-      for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text !== "string") continue;
-        for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
-        }
-      }
+      requestWithoutTools.systemInstruction = {
+        ...requestWithoutTools.systemInstruction,
+        parts: requestWithoutTools.systemInstruction.parts.map(part =>
+          typeof part.text === "string"
+            ? { ...part, text: applyAntigravityPromptRewrites(part.text) }
+            : part
+        ),
+      };
     }
 
     // The real client always opens the system prompt with the Antigravity identity.

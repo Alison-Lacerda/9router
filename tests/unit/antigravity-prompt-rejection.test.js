@@ -112,22 +112,25 @@ describe("retry with the system prompt in the first user turn", () => {
   const ag = new AntigravityExecutor();
   const SYSTEM = "Follow the house rules.";
   const sentBody = (call) => JSON.parse(fetchMock.mock.calls[call][1].body);
-  const run = (generationConfig = {}) => ag.execute({
+  const run = (generationConfig = {}, systemText = SYSTEM, log = undefined) => ag.execute({
     model: "gemini-4-hydrogen",
     body: {
       model: "gemini-4-hydrogen-high",
       request: {
-        systemInstruction: { role: "user", parts: [{ text: SYSTEM }] },
+        systemInstruction: { role: "user", parts: [{ text: systemText }] },
         contents: [{ role: "user", parts: [{ text: "hi" }] }],
         generationConfig,
       },
     },
     stream: false,
     credentials: { accessToken: "t", projectId: "p", connectionId: "c" },
+    log,
   });
   const ok = (extra = {}) => response(200, JSON.stringify({ response: {
     candidates: [{ content: { role: "model", parts: [{ text: "pong" }] }, finishReason: "STOP", ...extra }],
   } }));
+
+  beforeEach(() => ag.clearRejectedPromptCache());
 
   it("moves the system text to the front of the first user turn and succeeds", async () => {
     fetchMock.mockResolvedValueOnce(response(429, BARE)).mockResolvedValueOnce(ok());
@@ -193,6 +196,71 @@ describe("retry with the system prompt in the first user turn", () => {
     expect(sentBody(2).request.continuationToken).toBe("tok1");
     expect((sentBody(2).request.systemInstruction?.parts || []).map((p) => p.text)).not.toContain(SYSTEM);
     expect(sentBody(2).request.contents[0].parts[0]).toEqual({ text: SYSTEM });
+  });
+
+  it("remembers a rejected system prompt and skips the failing attempt on subsequent requests", async () => {
+    const warn = vi.fn();
+    const debug = vi.fn();
+    const log = { warn, debug };
+
+    fetchMock
+      .mockResolvedValueOnce(response(429, BARE))
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok());
+
+    const first = await run({}, SYSTEM, log);
+    expect(first.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    const second = await run({}, SYSTEM, log);
+    expect(second.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect((sentBody(2).request.systemInstruction?.parts || []).map((p) => p.text)).not.toContain(SYSTEM);
+    expect(sentBody(2).request.contents).toEqual([{ role: "user", parts: [{ text: SYSTEM }, { text: "hi" }] }]);
+  });
+
+  it("applies ANTIGRAVITY_PROMPT_REWRITES when moving a cached prompt up front", async () => {
+    const withBillingHeader = "x-anthropic-billing-header: cc_version=2.1.0;\nFollow the house rules.";
+    fetchMock
+      .mockResolvedValueOnce(response(429, BARE))
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(ok());
+
+    await run({}, withBillingHeader);
+    await run({}, "x-anthropic-billing-header: cc_version=2.2.0;\nFollow the house rules.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sentBody(2).request.contents).toEqual([{ role: "user", parts: [{ text: "Follow the house rules." }, { text: "hi" }] }]);
+  });
+
+  it("does not cache a prompt when the moved retry is also refused", async () => {
+    fetchMock.mockImplementation(async () => response(429, BARE));
+    await run();
+    await run();
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("evicts a cached prompt if a later moved attempt is rejected", async () => {
+    fetchMock
+      .mockResolvedValueOnce(response(429, BARE))
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce(response(429, BARE))
+      .mockResolvedValueOnce(response(429, BARE))
+      .mockResolvedValueOnce(ok());
+
+    await run();
+    const cachedRefused = await run();
+    expect(cachedRefused.response.status).toBe(429);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const retriedFresh = await run();
+    expect(retriedFresh.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(sentBody(3).request.systemInstruction.parts).toContainEqual({ text: SYSTEM });
   });
 });
 
